@@ -125,6 +125,10 @@ static portMUX_TYPE GNSS_PPS_mutex = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE PMU_mutex      = portMUX_INITIALIZER_UNLOCKED;
 volatile bool PMU_Irq = false;
 
+#if !defined(ALLOW_OLED_BARO_SAME_BUS)
+#define ALLOW_OLED_BARO_SAME_BUS false
+#endif
+
 static bool GPIO_21_22_are_busy = false;
 
 static union {
@@ -1153,7 +1157,7 @@ static byte ESP32_Display_setup()
         u8x8 = &u8x8_ttgo;
         rval = DISPLAY_OLED_TTGO;
       }
-    } else if (GPIO_21_22_are_busy) {
+    } else if (GPIO_21_22_are_busy && !ALLOW_OLED_BARO_SAME_BUS) {
       Wire1.begin(HELTEC_OLED_PIN_SDA , HELTEC_OLED_PIN_SCL);
       Wire1.beginTransmission(SSD1306_OLED_I2C_ADDR);
       has_oled = (Wire1.endTransmission() == 0);

@@ -138,7 +138,9 @@ extern Adafruit_NeoPixel strip;
                                   SOC_UNUSED_PIN))
 
 #define SOC_GPIO_PIN_BUZZER   (hw_info.model == SOFTRF_MODEL_PRIME_MK2 ?\
-                                SOC_UNUSED_PIN :                        \
+                                (hw_info.revision == 5 ?              \
+                                    SOC_UNUSED_PIN :        \
+                                    14 ) :                        \
                                 (esp32_board == ESP32_DEVKIT ?          \
                                   13 : SOC_UNUSED_PIN))
 
@@ -452,6 +454,8 @@ struct rst_info {
 #if defined(USE_OLED)
 #define U8X8_OLED_I2C_BUS_TYPE  U8X8_SSD1306_128X64_NONAME_2ND_HW_I2C
 #endif /* USE_OLED */
+
+#define ALLOW_OLED_BARO_SAME_BUS true
 
 #endif /* PLATFORM_ESP32_H */
 
