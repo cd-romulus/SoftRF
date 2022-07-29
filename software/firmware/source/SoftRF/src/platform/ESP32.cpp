@@ -1168,6 +1168,9 @@ static byte ESP32_Display_setup()
         rval = DISPLAY_OLED_HELTEC;
       }
     } else {
+      if (GPIO_21_22_are_busy){
+        Wire1 = Wire; 
+      }
       Wire1.begin(TTGO_V2_OLED_PIN_SDA , TTGO_V2_OLED_PIN_SCL);
       Wire1.beginTransmission(SSD1306_OLED_I2C_ADDR);
       has_oled = (Wire1.endTransmission() == 0);
@@ -1725,7 +1728,7 @@ static bool ESP32_Baro_setup()
 
     WIRE_FINI(Wire);
 
-    if (hw_info.revision == 2 || hw_info.revision >= 8)
+    if (hw_info.revision == 2 ) // || hw_info.revision >= 8)
       return false;
 
 #if !defined(ENABLE_AHRS)
