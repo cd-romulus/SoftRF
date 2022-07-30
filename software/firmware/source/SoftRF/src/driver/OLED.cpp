@@ -665,38 +665,46 @@ void OLED_049_func()
 #if !defined(EXCLUDE_OLED_TRAFFIC_PAGE)
 static void OLED_traffic()
 {
-  
+  const int SECTOR_ROTATE_ANGLE = 15;
+  const int NUM_SECTORS = 12;
   const unsigned char WIDTH = 128;
   const unsigned char HEIGHT = 64;
   const unsigned char padding = 16;
   // angular indicators for 12 sectors
   static const unsigned char indicatorPositions[12][2]={
-       {padding + 6, 39}, // 0 - 29
-       {padding + 13, 51}, // 30-59
-       {padding + 25, 58}, // 60 - 89
-       {padding + 39, 58}, // 90 - 119
-       {padding + 51, 51}, // 120 - 149
-       {padding + 58, 39}, // 150 - 179
-       {padding + 58, 25}, // 180 - 209
-       {padding + 51, 13}, // 210 - 239
-       {padding + 39, 6}, // 240 . 269
-       {padding + 25, 6}, // 270 - 299
+       {padding + 39, 6}, // 0 - 29
+       {padding + 51, 13}, // 30-59
+       {padding + 58,  25}, // 60 - 89
+       {padding + 58, 39}, // 90 - 119
+       {padding + 51,  51}, // 120 - 149
+       {padding + 39,  58}, // 150 - 179
+       {padding + 25,  58}, // 180 - 209
+       {padding + 13,  51}, // 210 - 239
+       {padding + 6,  39}, // 240 . 269
+       {padding + 6, 25}, // 270 - 299
        {padding + 13, 13}, // 300 - 329
-       {padding + 6, 25}}; // 330 - 359
+       {padding + 25,  6}}; // 330 - 359
 
   static const unsigned char verticalIndicatorPositionOffset = padding + 78;
   static const unsigned char verticalIndicatorPositions[4][2]={
-      {verticalIndicatorPositionOffset,13}, // > 14 deg above
-      {verticalIndicatorPositionOffset,26}, // >  7 deg
+      {verticalIndicatorPositionOffset,13}, // > 14 deg above (tan > 0.2493)
+      {verticalIndicatorPositionOffset,26}, // >  7 deg (tan > 0.1228)
       {verticalIndicatorPositionOffset,39}, // >  7 deg
       {verticalIndicatorPositionOffset,52}  // > 14 deg below 
   };
 
+  static const unsigned char nearestIndicatorSize = 5; // indicate nearest planes even if no alert is present
   static const unsigned char alertLevelIndicatorSize[4] = {3,7,9,11};
  
   unsigned char sectorAlertLevels[12] = {0};
+  float sectorDistances[12] = {100000,100000,100000,100000,100000,100000,100000,100000,100000,100000,100000,100000};
+  float sectorVerticalSeparations[12] = {100000,100000,100000,100000,100000,100000,100000,100000,100000,100000,100000,100000};
   unsigned char verticalAlertLevels[4] = {0};
+  float verticalDistances[4] ={100000,100000,100000,100000}; // this is not the vertical separation but the 2D distance relevant for the vertical indicator
+  
+
   /* simulate traffic */
+  /*
   unsigned int tmp=0;
   for (int i=0;i<12;i++){
     tmp = random(1000);
@@ -717,6 +725,49 @@ static void OLED_traffic()
       verticalAlertLevels[tmp] = sectorAlertLevels[i];
     }
   }
+  */
+
+  int sectorAngleSpan = 360/NUM_SECTORS;
+  int tangent = 0;
+  float verticalSeparation = 10000.0;
+  int distance = 0;
+  int bearing = 0;
+  unsigned char sectorIndex, verticalIndicatorIndex = 0;
+  for (int i=0; i < MAX_TRACKING_OBJECTS; i++) {
+    if (Container[i].addr && (now() - Container[i].timestamp) <= LED_EXPIRATION_TIME) {
+        bearing  = (int) Container[i].bearing;
+        distance = (int) Container[i].distance; // 2d distance
+        verticalSeparation = Container[i].altitude - ThisAircraft.altitude;
+
+        if (settings->pointer == DIRECTION_TRACK_UP) {
+          bearing = (360 + bearing - (int)ThisAircraft.course) % 360;
+        }
+        
+        
+        sectorIndex = (bearing / sectorAngleSpan) % NUM_SECTORS;
+      
+        tangent = verticalSeparation / Container[i].distance;
+        
+        verticalIndicatorIndex = 1; // default to +7 deg indicator
+
+        if (tangent > 0.2493){
+          verticalIndicatorIndex = 0;
+        }else if (tangent > 0.1228){
+          verticalIndicatorIndex = 1;
+        }else if (tangent < -0.1228){
+          verticalIndicatorIndex = 2;
+        }else if (tangent < -0.2493){
+          verticalIndicatorIndex = 3;
+        }
+      
+      sectorAlertLevels[sectorIndex] = sectorAlertLevels[sectorIndex] < Container[i].alarm_level ? Container[i].alarm_level : sectorAlertLevels[sectorIndex];
+      sectorDistances[sectorIndex] = sectorDistances[sectorIndex] > Container[i].distance ? Container[i].distance : sectorDistances[sectorIndex];
+      sectorVerticalSeparations[sectorIndex] = sectorVerticalSeparations[sectorIndex] > verticalSeparation ? verticalSeparation : sectorVerticalSeparations[sectorIndex];
+
+      verticalAlertLevels[verticalIndicatorIndex] = verticalAlertLevels[verticalIndicatorIndex] < Container[i].alarm_level ? Container[i].alarm_level : verticalAlertLevels[verticalIndicatorIndex];
+      verticalDistances[verticalIndicatorIndex] = verticalDistances[verticalIndicatorIndex] > Container[i].distance ? Container[i].distance : verticalDistances[verticalIndicatorIndex];
+    }
+  }
 
    /* XBM bitmap */
   unsigned char bitmap[1024] = {0};
@@ -731,10 +782,14 @@ static void OLED_traffic()
   int x,y=0;
 
   static unsigned char blinkState = 0;
+
   // iterate over angular indicators
   for (int i = 0; i<12; i++){
     if (sectorAlertLevels[i] < 3 || blinkState % 2 == 0){
       indicatorSize = alertLevelIndicatorSize[sectorAlertLevels[i]];
+      if (sectorAlertLevels[i] == 0 && sectorDistances[i] < OLED_TRAFFIC_DISTANCE_INFO && sectorVerticalSeparations[i] < OLED_TRAFFIC_VERTICAL_SEPARATION_INFO){
+        indicatorSize = nearestIndicatorSize;
+      }
       for (int relativeX = -indicatorSize/2; relativeX<=indicatorSize/2; relativeX++){
         for (int relativeY = -indicatorSize/2; relativeY<=indicatorSize/2; relativeY++){
           /* setPixel(int x, int y) */

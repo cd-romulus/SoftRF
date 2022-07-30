@@ -25,6 +25,11 @@
 
 #define isTimeToOLED()          (millis() - OLEDTimeMarker > 500)
 
+#if !defined(EXCLUDE_OLED_TRAFFIC_PAGE)
+#define OLED_TRAFFIC_DISTANCE_INFO 3000 // 3km is the default "nearest" radius of flarm devics
+#define OLED_TRAFFIC_VERTICAL_SEPARATION_INFO 500 // 500 m is nearet vertical separatarion limit of flarm devices
+#endif /* EXCLUDE_OLED_TRAFFIC_PAGE */
+
 byte OLED_setup(void);
 void OLED_loop(void);
 void OLED_fini(int);
