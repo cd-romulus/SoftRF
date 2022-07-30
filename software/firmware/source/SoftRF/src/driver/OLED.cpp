@@ -39,6 +39,9 @@ enum
 #if !defined(EXCLUDE_OLED_BARO_PAGE)
   OLED_PAGE_BARO,
 #endif /* EXCLUDE_OLED_BARO_PAGE */
+#if !defined(EXCLUDE_OLED_TRAFFIC_PAGE)
+  OLED_PAGE_TRAFFIC,
+#endif /* EXCLUDE_OLED_TRAFFIC_PAGE */
   OLED_PAGE_COUNT
 };
 
@@ -659,6 +662,131 @@ void OLED_049_func()
 
 #endif /* EXCLUDE_OLED_049 */
 
+#if !defined(EXCLUDE_OLED_TRAFFIC_PAGE)
+static void OLED_traffic()
+{
+  
+  const unsigned char WIDTH = 128;
+  const unsigned char HEIGHT = 64;
+  const unsigned char padding = 16;
+  // angular indicators for 12 sectors
+  static const unsigned char indicatorPositions[12][2]={
+       {padding + 6, 39}, // 0 - 29
+       {padding + 13, 51}, // 30-59
+       {padding + 25, 58}, // 60 - 89
+       {padding + 39, 58}, // 90 - 119
+       {padding + 51, 51}, // 120 - 149
+       {padding + 58, 39}, // 150 - 179
+       {padding + 58, 25}, // 180 - 209
+       {padding + 51, 13}, // 210 - 239
+       {padding + 39, 6}, // 240 . 269
+       {padding + 25, 6}, // 270 - 299
+       {padding + 13, 13}, // 300 - 329
+       {padding + 6, 25}}; // 330 - 359
+
+  static const unsigned char verticalIndicatorPositionOffset = padding + 78;
+  static const unsigned char verticalIndicatorPositions[4][2]={
+      {verticalIndicatorPositionOffset,13}, // > 14 deg above
+      {verticalIndicatorPositionOffset,26}, // >  7 deg
+      {verticalIndicatorPositionOffset,39}, // >  7 deg
+      {verticalIndicatorPositionOffset,52}  // > 14 deg below 
+  };
+
+  static const unsigned char alertLevelIndicatorSize[4] = {3,7,9,11};
+ 
+  unsigned char sectorAlertLevels[12] = {0};
+  unsigned char verticalAlertLevels[4] = {0};
+  /* simulate traffic */
+  unsigned int tmp=0;
+  for (int i=0;i<12;i++){
+    tmp = random(1000);
+    if (tmp < 800){
+      sectorAlertLevels[i] = 0;
+    }
+    else if (tmp < 980){
+      sectorAlertLevels[i] = 1;
+    }
+    else if (tmp<990){
+      sectorAlertLevels[i] = 2;
+    }
+    else{
+      sectorAlertLevels[i] = 3;
+    }
+    tmp = random(4);
+    if (verticalAlertLevels[tmp] < sectorAlertLevels[i]) {
+      verticalAlertLevels[tmp] = sectorAlertLevels[i];
+    }
+  }
+
+   /* XBM bitmap */
+  unsigned char bitmap[1024] = {0};
+
+  /* helper variables for pixel to bitmap bit conversion */
+  int pixelNumber = 0;
+  int byteNumber = 0;
+  int bitNumber = 0;
+
+  unsigned char indicatorSize=0;
+
+  int x,y=0;
+
+  static unsigned char blinkState = 0;
+  // iterate over angular indicators
+  for (int i = 0; i<12; i++){
+    if (sectorAlertLevels[i] < 3 || blinkState % 2 == 0){
+      indicatorSize = alertLevelIndicatorSize[sectorAlertLevels[i]];
+      for (int relativeX = -indicatorSize/2; relativeX<=indicatorSize/2; relativeX++){
+        for (int relativeY = -indicatorSize/2; relativeY<=indicatorSize/2; relativeY++){
+          /* setPixel(int x, int y) */
+          /* setPixel(indicatorPositions[i][0]+x,indicatorPositions[i][1]+y); */
+         
+         /* tiles */
+          x = indicatorPositions[i][0] + relativeX;
+          y = indicatorPositions[i][1] + relativeY;
+          //pixelNumber = y * WIDTH + x;
+          byteNumber = WIDTH * (y / 8) + x;   //x + WIDTH/8 * (y % 8);
+          bitNumber = (y % 8);
+
+          /* XBM */
+          /*
+          x=indicatorPositions[i][0]+relativeX;
+          y=indicatorPositions[i][1]+relativeY;
+          pixelNumber = y*WIDTH + x;
+          byteNumber = pixelNumber/8; 
+          bitNumber = pixelNumber % 8;
+          */
+          bitmap[byteNumber] |= 1 << bitNumber;
+          /* end setPixel */
+        }
+      }
+    }
+  }
+
+  for (int i = 0; i < 4; i++){
+    if (verticalAlertLevels[i] < 3 || blinkState % 2 == 0){
+      indicatorSize = alertLevelIndicatorSize[verticalAlertLevels[i]];
+      for (int relativeX = -indicatorSize/2; relativeX<=indicatorSize/2; relativeX++){
+        for (int relativeY = -indicatorSize/2; relativeY<=indicatorSize/2; relativeY++){
+         /* tiles */
+          x = verticalIndicatorPositions[i][0] + relativeX;
+          y = verticalIndicatorPositions[i][1] + relativeY;
+          //pixelNumber = y * WIDTH + x;
+          byteNumber = WIDTH * (y / 8) + x;   //x + WIDTH/8 * (y % 8);
+          bitNumber = (y % 8);
+          bitmap[byteNumber] |= 1 << bitNumber;
+          /* end setPixel */
+        }
+      }
+    }
+  }
+
+  for (int i = 0; i<HEIGHT/8; i++){
+    u8x8->drawTile(0,i, 16, bitmap+i*128);
+  }
+  
+}
+#endif /* EXCLUDE_OLED_TRAFFIC_PAGE */
+
 void OLED_loop()
 {
   if (u8x8) {
@@ -678,6 +806,11 @@ void OLED_loop()
           OLED_baro();
           break;
 #endif /* EXCLUDE_OLED_BARO_PAGE */
+#if !defined(EXCLUDE_OLED_TRAFFIC_PAGE)
+        case OLED_PAGE_TRAFFIC:
+          OLED_traffic();
+          break;
+#endif /* EXCLUDE_OLED_TRAFFIC_PAGE */
         case OLED_PAGE_RADIO:
         default:
           OLED_radio();
