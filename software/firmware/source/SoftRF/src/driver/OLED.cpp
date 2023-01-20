@@ -701,7 +701,7 @@ static void OLED_traffic()
   float sectorVerticalSeparations[12] = {100000,100000,100000,100000,100000,100000,100000,100000,100000,100000,100000,100000};
   unsigned char verticalAlertLevels[4] = {0};
   float verticalDistances[4] ={100000,100000,100000,100000}; // this is not the vertical separation but the 2D distance relevant for the vertical indicator
-  
+  float verticalIndicatorVerticalSeparations[4] ={100000,100000,100000,100000};
 
   /* simulate traffic */
   /*
@@ -727,12 +727,43 @@ static void OLED_traffic()
   }
   */
 
-  int sectorAngleSpan = 360/NUM_SECTORS;
-  int tangent = 0;
+  #ifdef OLED_TRAFFIC_SIMULATE_TRAFFIC
+  static unsigned int simulateTrafficCounter = 0;
+  const int SIMULATOR_UPDATE_STEP = 8;
+  const int distances[4] = {1400, 1200, 1000, 800};
+  const int verticalSeparations[4] = {400, 0, -150, -400} ;
+  #include <math.h>
+  if (simulateTrafficCounter % SIMULATOR_UPDATE_STEP == 0){
+    Container[0].addr = 1;
+    Container[0].timestamp = now();
+    Container[0].bearing = (simulateTrafficCounter / SIMULATOR_UPDATE_STEP * 30) % 360;
+    Container[0].distance = distances[(simulateTrafficCounter / (SIMULATOR_UPDATE_STEP * NUM_SECTORS )) % 4]; //1400 - (simulateTrafficCounter / (SIMULATOR_UPDATE_STEP * NUM_SECTORS ) * 200) % 1400;
+    //if (Container[0].distance < 0){
+    //  Container[0].distance = 1400;
+    //}
+    Container[0].altitude = ThisAircraft.altitude + verticalSeparations[(simulateTrafficCounter / (SIMULATOR_UPDATE_STEP * NUM_SECTORS )) % 4]; //400 - (simulateTrafficCounter / (SIMULATOR_UPDATE_STEP * NUM_SECTORS ) * 250) % 900;
+    Container[0].alarm_level = (simulateTrafficCounter / (SIMULATOR_UPDATE_STEP * NUM_SECTORS )) % 4;
+    Serial.print("SIM: Aircraft at ");
+    Serial.print(Container[0].bearing);
+    Serial.print(" deg, "); 
+    Serial.print(Container[0].distance); 
+    Serial.print( " m, "); 
+    Serial.print(Container[0].altitude-ThisAircraft.altitude);
+    Serial.print(" m above, ");
+    Serial.print(round(atan2(Container[0].altitude-ThisAircraft.altitude,Container[0].distance)*180/3.1415f));
+    Serial.print(" deg (elev), alarm level: ");
+    Serial.println(Container[0].alarm_level);
+  }
+  simulateTrafficCounter++;
+  #endif // OLED_TRAFFIC_SIMULATE_TRAFFIC
+
+  const int sectorAngleSpan = 360/NUM_SECTORS;
+  float tangent = 0;
   float verticalSeparation = 10000.0;
   int distance = 0;
   int bearing = 0;
-  unsigned char sectorIndex, verticalIndicatorIndex = 0;
+  unsigned char sectorIndex, closestNeighbourSectorIndex, verticalIndicatorIndex = 0;
+  unsigned char shouldBlink = 0;
   for (int i=0; i < MAX_TRACKING_OBJECTS; i++) {
     if (Container[i].addr && (now() - Container[i].timestamp) <= LED_EXPIRATION_TIME) {
         bearing  = (int) Container[i].bearing;
@@ -745,27 +776,48 @@ static void OLED_traffic()
         
         
         sectorIndex = (bearing / sectorAngleSpan) % NUM_SECTORS;
-      
+        closestNeighbourSectorIndex = ((bearing + sectorAngleSpan / 2) / sectorAngleSpan ) % NUM_SECTORS;
+        if (closestNeighbourSectorIndex == sectorIndex){
+          closestNeighbourSectorIndex = (closestNeighbourSectorIndex + (NUM_SECTORS - 1) ) % NUM_SECTORS;
+        }
+
         tangent = verticalSeparation / Container[i].distance;
         
         verticalIndicatorIndex = 1; // default to +7 deg indicator
 
-        if (tangent > 0.2493){
+        if (tangent > 0.2493){ // > +14 deg
           verticalIndicatorIndex = 0;
-        }else if (tangent > 0.1228){
+        }else if (tangent > 0.1228){ // > +7 deg
           verticalIndicatorIndex = 1;
-        }else if (tangent < -0.1228){
+        }else if (tangent < -0.2493){ // < -14 deg
+          verticalIndicatorIndex = 3; 
+        }
+        else if (tangent < -0.1228){ // < -7 deg
           verticalIndicatorIndex = 2;
-        }else if (tangent < -0.2493){
-          verticalIndicatorIndex = 3;
         }
       
       sectorAlertLevels[sectorIndex] = sectorAlertLevels[sectorIndex] < Container[i].alarm_level ? Container[i].alarm_level : sectorAlertLevels[sectorIndex];
+      if (Container[i].alarm_level == ALARM_LEVEL_URGENT){
+        shouldBlink = 1;
+        // Original flarm makes three segments blink alert level URGENT, where the plane is in the middle sector
+        // raise alert level for next sector
+        sectorAlertLevels[(sectorIndex + 1) % NUM_SECTORS] = sectorAlertLevels[(sectorIndex + 1) % NUM_SECTORS] < 2 ? 2 : sectorAlertLevels[(sectorIndex + 1) % NUM_SECTORS];
+        // raise alert level for previous sector
+        sectorAlertLevels[(sectorIndex + (NUM_SECTORS - 1)) % NUM_SECTORS] = sectorAlertLevels[(sectorIndex + (NUM_SECTORS - 1)) % NUM_SECTORS] < 2 ? 2 : sectorAlertLevels[(sectorIndex + (NUM_SECTORS - 1)) % NUM_SECTORS];
+      }
+      else if (Container[i].alarm_level == ALARM_LEVEL_IMPORTANT){
+        shouldBlink = 1;
+        // Original flarm makes two segments blink for alert level MEDIUM
+        // raise alert level for closest neighbor sector
+        sectorAlertLevels[closestNeighbourSectorIndex] = sectorAlertLevels[closestNeighbourSectorIndex] < 2 ? 2 : sectorAlertLevels[closestNeighbourSectorIndex];
+      }
+      
       sectorDistances[sectorIndex] = sectorDistances[sectorIndex] > Container[i].distance ? Container[i].distance : sectorDistances[sectorIndex];
       sectorVerticalSeparations[sectorIndex] = sectorVerticalSeparations[sectorIndex] > verticalSeparation ? verticalSeparation : sectorVerticalSeparations[sectorIndex];
 
       verticalAlertLevels[verticalIndicatorIndex] = verticalAlertLevels[verticalIndicatorIndex] < Container[i].alarm_level ? Container[i].alarm_level : verticalAlertLevels[verticalIndicatorIndex];
       verticalDistances[verticalIndicatorIndex] = verticalDistances[verticalIndicatorIndex] > Container[i].distance ? Container[i].distance : verticalDistances[verticalIndicatorIndex];
+      verticalIndicatorVerticalSeparations[verticalIndicatorIndex] = verticalIndicatorVerticalSeparations[verticalIndicatorIndex] > verticalSeparation ? verticalSeparation : verticalIndicatorVerticalSeparations[verticalIndicatorIndex];
     }
   }
 
@@ -785,7 +837,7 @@ static void OLED_traffic()
 
   // iterate over angular indicators
   for (int i = 0; i<12; i++){
-    if (sectorAlertLevels[i] < 3 || blinkState % 2 == 0){
+    if (sectorAlertLevels[i] < 2 || blinkState % 2 == 0){
       indicatorSize = alertLevelIndicatorSize[sectorAlertLevels[i]];
       if (sectorAlertLevels[i] == 0 && sectorDistances[i] < OLED_TRAFFIC_DISTANCE_INFO && sectorVerticalSeparations[i] < OLED_TRAFFIC_VERTICAL_SEPARATION_INFO){
         indicatorSize = nearestIndicatorSize;
@@ -817,9 +869,13 @@ static void OLED_traffic()
     }
   }
 
+  // iterate over vertical indicators
   for (int i = 0; i < 4; i++){
-    if (verticalAlertLevels[i] < 3 || blinkState % 2 == 0){
+    if (verticalAlertLevels[i] < 2 || blinkState % 2 == 0){
       indicatorSize = alertLevelIndicatorSize[verticalAlertLevels[i]];
+      if (verticalAlertLevels[i] == 0 && verticalDistances[i] < OLED_TRAFFIC_DISTANCE_INFO && verticalIndicatorVerticalSeparations[i] < OLED_TRAFFIC_VERTICAL_SEPARATION_INFO){
+        indicatorSize = nearestIndicatorSize;
+      }
       for (int relativeX = -indicatorSize/2; relativeX<=indicatorSize/2; relativeX++){
         for (int relativeY = -indicatorSize/2; relativeY<=indicatorSize/2; relativeY++){
          /* tiles */
@@ -838,6 +894,8 @@ static void OLED_traffic()
   for (int i = 0; i<HEIGHT/8; i++){
     u8x8->drawTile(0,i, 16, bitmap+i*128);
   }
+
+  blinkState = shouldBlink ? blinkState + 1 : 0;
   
 }
 #endif /* EXCLUDE_OLED_TRAFFIC_PAGE */
