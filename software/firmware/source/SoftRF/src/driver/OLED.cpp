@@ -693,7 +693,7 @@ static void OLED_traffic()
       {verticalIndicatorPositionOffset,52}  // > 14 deg below 
   };
 
-  static const unsigned char nearestIndicatorSize = 5; // indicate nearest planes even if no alert is present
+  static const unsigned char nearestIndicatorSize = 7; // indicate nearest planes even if no alert is present
   static const unsigned char alertLevelIndicatorSize[4] = {3,7,9,11};
  
   unsigned char sectorAlertLevels[12] = {0};
@@ -730,18 +730,18 @@ static void OLED_traffic()
   #ifdef OLED_TRAFFIC_SIMULATE_TRAFFIC
   static unsigned int simulateTrafficCounter = 0;
   const int SIMULATOR_UPDATE_STEP = 8;
-  const int distances[4] = {1400, 1200, 1000, 800};
-  const int verticalSeparations[4] = {400, 0, -150, -400} ;
+  const int distances[6] = {1400, 1200, 1000, 800, 0, 0};
+  const int verticalSeparations[6] = {400, 0, -100, -400, -100, 100} ;
   #include <math.h>
   if (simulateTrafficCounter % SIMULATOR_UPDATE_STEP == 0){
     Container[0].addr = 1;
     Container[0].timestamp = now();
     Container[0].bearing = (simulateTrafficCounter / SIMULATOR_UPDATE_STEP * 30) % 360;
-    Container[0].distance = distances[(simulateTrafficCounter / (SIMULATOR_UPDATE_STEP * NUM_SECTORS )) % 4]; //1400 - (simulateTrafficCounter / (SIMULATOR_UPDATE_STEP * NUM_SECTORS ) * 200) % 1400;
+    Container[0].distance = distances[(simulateTrafficCounter / (SIMULATOR_UPDATE_STEP * NUM_SECTORS )) % 6]; //1400 - (simulateTrafficCounter / (SIMULATOR_UPDATE_STEP * NUM_SECTORS ) * 200) % 1400;
     //if (Container[0].distance < 0){
     //  Container[0].distance = 1400;
     //}
-    Container[0].altitude = ThisAircraft.altitude + verticalSeparations[(simulateTrafficCounter / (SIMULATOR_UPDATE_STEP * NUM_SECTORS )) % 4]; //400 - (simulateTrafficCounter / (SIMULATOR_UPDATE_STEP * NUM_SECTORS ) * 250) % 900;
+    Container[0].altitude = ThisAircraft.altitude + verticalSeparations[(simulateTrafficCounter / (SIMULATOR_UPDATE_STEP * NUM_SECTORS )) % 6]; //400 - (simulateTrafficCounter / (SIMULATOR_UPDATE_STEP * NUM_SECTORS ) * 250) % 900;
     Container[0].alarm_level = (simulateTrafficCounter / (SIMULATOR_UPDATE_STEP * NUM_SECTORS )) % 4;
     Serial.print("SIM: Aircraft at ");
     Serial.print(Container[0].bearing);
@@ -753,6 +753,41 @@ static void OLED_traffic()
     Serial.print(round(atan2(Container[0].altitude-ThisAircraft.altitude,Container[0].distance)*180/3.1415f));
     Serial.print(" deg (elev), alarm level: ");
     Serial.println(Container[0].alarm_level);
+    if (simulateTrafficCounter / (SIMULATOR_UPDATE_STEP * NUM_SECTORS ) > 5){
+      Container[1].addr = 2;
+      Container[1].timestamp = now();
+      Container[1].bearing = ((int)Container[0].bearing + 180) % 360;
+      Container[1].distance = distances[0];
+      Container[1].altitude = Container[0].altitude-ThisAircraft.altitude == 0 ? ThisAircraft.altitude - 100 :  ThisAircraft.altitude - (Container[0].altitude - ThisAircraft.altitude);
+      Container[1].alarm_level = 0;
+        Serial.print("     2nd aircraft at ");
+        Serial.print(Container[1].bearing);
+        Serial.print(" deg, "); 
+        Serial.print(Container[1].distance); 
+        Serial.print( " m, "); 
+        Serial.print(Container[1].altitude-ThisAircraft.altitude);
+        Serial.print(" m above, ");
+        Serial.print(round(atan2(Container[1].altitude-ThisAircraft.altitude,Container[1].distance)*180/3.1415f));
+        Serial.print(" deg (elev), alarm level: ");
+        Serial.println(Container[0].alarm_level);
+      Container[2].addr = 3;
+      Container[2].timestamp = now();
+      Container[2].bearing = Container[0].bearing;
+      Container[2].distance = distances[0];
+      Container[2].altitude = Container[0].altitude;
+      Container[2].alarm_level = 0;
+        Serial.print("     3rd aircraft");
+        Serial.print(Container[2].bearing);
+        Serial.print(" deg, "); 
+        Serial.print(Container[2].distance); 
+        Serial.print( " m, "); 
+        Serial.print(Container[2].altitude-ThisAircraft.altitude);
+        Serial.print(" m above, ");
+        Serial.print(round(atan2(Container[2].altitude-ThisAircraft.altitude,Container[2].distance)*180/3.1415f));
+        Serial.print(" deg (elev), alarm level: ");
+        Serial.print(Container[2].alarm_level);
+        Serial.println(" (must not disable overall alarm state)");
+    }
   }
   simulateTrafficCounter++;
   #endif // OLED_TRAFFIC_SIMULATE_TRAFFIC
@@ -781,18 +816,22 @@ static void OLED_traffic()
           closestNeighbourSectorIndex = (closestNeighbourSectorIndex + (NUM_SECTORS - 1) ) % NUM_SECTORS;
         }
 
-        tangent = verticalSeparation / Container[i].distance;
-        
+        if (Container[i].distance < 1){
+          tangent = verticalSeparation >=0 ? 1 : -1; // prevent division by zero for overflight.
+        }
+        else{
+          tangent = verticalSeparation / Container[i].distance;
+        }
         verticalIndicatorIndex = 1; // default to +7 deg indicator
 
         if (tangent > 0.2493){ // > +14 deg
           verticalIndicatorIndex = 0;
-        }else if (tangent > 0.1228){ // > +7 deg
+        }else if (tangent > 0){ // > 0 deg
           verticalIndicatorIndex = 1;
         }else if (tangent < -0.2493){ // < -14 deg
           verticalIndicatorIndex = 3; 
         }
-        else if (tangent < -0.1228){ // < -7 deg
+        else if (tangent < 0){ // < 0 deg
           verticalIndicatorIndex = 2;
         }
       
@@ -810,6 +849,9 @@ static void OLED_traffic()
         // Original flarm makes two segments blink for alert level MEDIUM
         // raise alert level for closest neighbor sector
         sectorAlertLevels[closestNeighbourSectorIndex] = sectorAlertLevels[closestNeighbourSectorIndex] < 2 ? 2 : sectorAlertLevels[closestNeighbourSectorIndex];
+      }
+      else if (Container[i].alarm_level == ALARM_LEVEL_LOW){
+        shouldBlink = 1;
       }
       
       sectorDistances[sectorIndex] = sectorDistances[sectorIndex] > Container[i].distance ? Container[i].distance : sectorDistances[sectorIndex];
@@ -837,7 +879,7 @@ static void OLED_traffic()
 
   // iterate over angular indicators
   for (int i = 0; i<12; i++){
-    if (sectorAlertLevels[i] < 2 || blinkState % 2 == 0){
+    if (sectorAlertLevels[i] < 1 || blinkState % 2 == 0){
       indicatorSize = alertLevelIndicatorSize[sectorAlertLevels[i]];
       if (sectorAlertLevels[i] == 0 && sectorDistances[i] < OLED_TRAFFIC_DISTANCE_INFO && sectorVerticalSeparations[i] < OLED_TRAFFIC_VERTICAL_SEPARATION_INFO){
         indicatorSize = nearestIndicatorSize;
@@ -871,7 +913,7 @@ static void OLED_traffic()
 
   // iterate over vertical indicators
   for (int i = 0; i < 4; i++){
-    if (verticalAlertLevels[i] < 2 || blinkState % 2 == 0){
+    if (verticalAlertLevels[i] < 1 || blinkState % 2 == 0){
       indicatorSize = alertLevelIndicatorSize[verticalAlertLevels[i]];
       if (verticalAlertLevels[i] == 0 && verticalDistances[i] < OLED_TRAFFIC_DISTANCE_INFO && verticalIndicatorVerticalSeparations[i] < OLED_TRAFFIC_VERTICAL_SEPARATION_INFO){
         indicatorSize = nearestIndicatorSize;
