@@ -669,7 +669,7 @@ static void OLED_traffic()
   const int NUM_SECTORS = 12;
   const unsigned char WIDTH = 128;
   const unsigned char HEIGHT = 64;
-  const unsigned char padding = 16;
+  const unsigned char padding = 8;
   // angular indicators for 12 sectors
   static const unsigned char indicatorPositions[12][2]={
        {padding + 39, 6}, // 0 - 29
@@ -932,12 +932,63 @@ static void OLED_traffic()
       }
     }
   }
+  
+  if (!OLED_display_titles){
+    u8x8->clear();
+  }
 
   for (int i = 0; i<HEIGHT/8; i++){
-    u8x8->drawTile(0,i, 16, bitmap+i*128);
+    u8x8->drawTile(0,i, 13, bitmap+i*128); // todo: use 13 tiles in x direction for traffic display (and keep 3 for additional info)
   }
 
   blinkState = shouldBlink ? blinkState + 1 : 0;
+
+  /// additional system info
+  /// no position fix
+  if (!isValidGNSSFix()){
+    u8x8->drawString(padding/8+3,3, "no");
+    u8x8->drawString(padding/8+3,4, "fix");
+  }
+
+  /// battery charge
+  char buf[16];
+  int displayValue = Battery_charge();
+  if (displayValue > 100){displayValue=100;}
+  itoa(displayValue,buf,10);
+  u8x8->drawString(WIDTH/8-3,HEIGHT/8-2,BAT_text);
+  u8x8->drawString(WIDTH/8-strlen(buf),HEIGHT/8-1,buf);
+
+  /// RX state
+  if (!OLED_display_titles){
+    u8x8->drawString(WIDTH/8-2,HEIGHT/8-8,RX_text);
+    u8x8->drawString(WIDTH/8-2,HEIGHT/8-5,TX_text);
+    OLED_display_titles=true;
+  }
+  if (settings->power_save & POWER_SAVE_NORECEIVE &&
+        (hw_info.rf == RF_IC_SX1276 || hw_info.rf == RF_IC_SX1262)) {
+      u8x8->drawString(WIDTH/8-3,HEIGHT/8-7, "off");
+  } else {
+      displayValue = rx_packets_counter % 1000;
+      itoa(displayValue, buf, 10);
+      u8x8->drawString(WIDTH/8-strlen(buf),HEIGHT/8-7, buf);
+  }
+  prev_rx_packets_counter = rx_packets_counter;
+
+  /// TX state
+  
+  if (settings->mode        == SOFTRF_MODE_RECEIVER ||
+      settings->rf_protocol == RF_PROTOCOL_ADSB_UAT ||
+      settings->txpower     == RF_TX_POWER_OFF) {
+    u8x8->drawString(WIDTH/8-3,HEIGHT/8-4, "off");
+    
+  } else {
+    displayValue = tx_packets_counter % 1000;
+    itoa(displayValue, buf, 10);
+    u8x8->drawString(WIDTH/8-strlen(buf),HEIGHT/8-4, buf);
+  }
+  prev_tx_packets_counter = tx_packets_counter;
+
+
   
 }
 #endif /* EXCLUDE_OLED_TRAFFIC_PAGE */
